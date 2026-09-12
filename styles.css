@@ -15,3 +15,5 @@
 .release-card ul{font-size:13px}
 .button{font-size:13px}
 @media(max-width:680px){.hero-description,.section-intro,.feature-grid p,.install-steps p,.faq details p{font-size:13px}.download-copy .button{font-size:11px}.hero-description{max-width:300px}.desktop-break{display:none}}
+
+[hidden]{display:none!important}

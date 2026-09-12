@@ -17,32 +17,51 @@ lightbox.addEventListener('click', event => {
   if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) lightbox.close();
 });
 
-// The static link stays usable even if the GitHub API is unavailable or limited.
-// Future stable APK releases can update download buttons without a site rebuild.
-const repository = 'https://api.github.com/repos/kubok758/Smeshariki-Dust-Strike/releases/latest';
-const releaseController = new AbortController();
-const releaseTimeout = setTimeout(() => releaseController.abort(), 5000);
-fetch(repository, {signal: releaseController.signal})
-  .then(response => { if (!response.ok) throw new Error('Release unavailable'); return response.json(); })
+// Keep the same verified release in index.html as a no-JavaScript fallback.
+// An empty URL deliberately leaves download links pointing to the status panel.
+fetch('release.json', {cache: 'no-cache'})
+  .then(response => {
+    if (!response.ok) throw new Error('Release unavailable');
+    return response.json();
+  })
   .then(release => {
-    if (release.draft || release.prerelease || !/^v?\d+\.\d+\.\d+$/.test(release.tag_name)) return;
-    const asset = release.assets?.find(item => item.name === 'Smeshariki-Dust-Strike.apk') || release.assets?.find(item => /^Smeshariki-Dust-Strike.*\.apk$/i.test(item.name));
-    const prefix = 'https://github.com/kubok758/Smeshariki-Dust-Strike/releases/download/';
-    if (!asset?.browser_download_url?.startsWith(prefix)) return;
-    document.querySelectorAll('.download-link').forEach(link => { link.href = asset.browser_download_url; });
-    document.querySelectorAll('.release-size').forEach(label => { label.textContent = `${Math.ceil(asset.size / 1e6)} МБ`; });
-    const version = release.tag_name.replace(/^v/, '');
-    document.querySelector('.header-version').textContent = version;
-    document.querySelector('.version-value').textContent = version;
-    if (release.html_url?.startsWith('https://github.com/kubok758/Smeshariki-Dust-Strike/releases/')) document.querySelector('.release-notes').href = release.html_url;
-    if (version !== '1.8.4') {
-      document.querySelector('.release-date').textContent = new Date(release.published_at).toLocaleDateString('ru-RU', {day:'numeric', month:'long', year:'numeric'});
-      document.querySelector('.release-card h3').textContent = 'Новая версия уже доступна';
-      const list = document.querySelector('.release-card ul');
-      list.replaceChildren();
-      const item = document.createElement('li');
-      item.textContent = 'Список изменений — на странице обновления. Для совместной игры обновитесь всей компанией.';
-      list.append(item);
+    if (!/^\d+\.\d+\.\d+$/.test(release.version) || !Number.isSafeInteger(release.apkBytes) || release.apkBytes <= 0) return;
+    if (typeof release.downloadUrl !== 'string') return;
+    if (release.downloadUrl) {
+      const url = new URL(release.downloadUrl);
+      if (url.origin !== 'https://mega.nz' || !url.pathname.startsWith('/file/') || !url.hash) return;
     }
-  }).catch(() => { /* Keep the verified release embedded in the page. */ })
-  .finally(() => clearTimeout(releaseTimeout));
+    const ready = Boolean(release.downloadUrl);
+    document.querySelectorAll('.download-link').forEach(link => {
+      link.href = ready ? release.downloadUrl : '#download';
+      if (ready) {
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.title = 'Открыть APK на MEGA в новой вкладке';
+      } else {
+        link.removeAttribute('target');
+        link.removeAttribute('rel');
+        link.removeAttribute('title');
+      }
+      const label = link.querySelector('.download-label');
+      label.textContent = ready ? label.dataset.readyLabel : label.dataset.pendingLabel;
+    });
+    document.querySelectorAll('.header-version, .version-value').forEach(label => { label.textContent = release.version; });
+    document.querySelectorAll('.release-size').forEach(label => { label.textContent = `${Math.ceil(release.apkBytes / 1e6)} МБ`; });
+    document.querySelector('.release-state').textContent = ready ? 'ГОТОВО К УСТАНОВКЕ' : 'ГОТОВИМ ССЫЛКУ';
+    document.querySelector('.release-badge').textContent = ready ? 'LIVE' : 'ОЖИДАЕТ ССЫЛКИ';
+    document.querySelector('#release-status').textContent = ready
+      ? 'Кнопка откроет файл на MEGA в новой вкладке. Скачай APK, затем открой его на Android.'
+      : 'Файл готовится к публикации на MEGA. Ссылка на скачивание появится здесь.';
+    const published = new Date(release.publishedAt);
+    if (!Number.isNaN(published.getTime())) document.querySelector('.release-date').textContent = published.toLocaleDateString('ru-RU', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'});
+    if (Array.isArray(release.changes) && release.changes.length && release.changes.every(change => typeof change === 'string')) {
+      const list = document.querySelector('.release-card ul');
+      list.replaceChildren(...release.changes.map(change => {
+        const item = document.createElement('li');
+        item.textContent = change;
+        return item;
+      }));
+    }
+  })
+  .catch(() => { /* The static release remains usable when the config cannot load. */ });
