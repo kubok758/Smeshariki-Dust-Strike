@@ -1,0 +1,4 @@
+qa/
+*.log
+node_modules/
+*.apk
